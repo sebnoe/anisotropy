@@ -5,5 +5,6 @@ dependencies:
   - numpy=1.16.4
   - pip=19.2.1
   - python=3.7.3
+  - scipy=1.4.1
   - pip:
     - mplstereonet==0.5
