@@ -442,7 +442,7 @@ def plot_directions(nus):
         ic,dc = ic*r2d, dc*r2d+90
         ax.pole(dc, ic, 'r', markersize=10,marker='*')
     ax.grid()
-    plt.savefig('directions_plot.png')
+    #plt.savefig('directions_plot.png')
     plt.show()
 
 
