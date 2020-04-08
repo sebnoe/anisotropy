@@ -6,5 +6,6 @@ dependencies:
   - pip=19.2.1
   - python=3.7.3
   - scipy=1.4.1
+  - matplotlib=3.1.2
   - pip:
     - mplstereonet==0.5
