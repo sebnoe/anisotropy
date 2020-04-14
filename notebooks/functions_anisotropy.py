@@ -12,6 +12,8 @@
 #     name: python3
 # ---
 
+# Author: Sebastian Noe, snoe@geophysik.uni-muenchen.de
+
 import numpy as np
 import matplotlib.pyplot as plt
 import mplstereonet
@@ -24,10 +26,18 @@ from scipy import stats
 #
 # These randomly generated elastic tensor may be unphysical. Another function to call specific materials is installed.
 
+# +
+def load_random_medium_list():
+    medium= ['isotropic','cubic','VTI','tetragonal','trigonal','orthorhombic','monoclinic','triclinic']
+    for i in range(0,len(medium)):
+        print('#'+str(i), medium[i])
+    return medium
+    
 def get_random_C(mode, sigma):
     C = np.zeros((6,6))
     #options for mode: 'isotropic','cubic','VTI','trigonal','tetragonal','orthorhombic','monoclinic','triclinic'
     if mode=='triclinic':
+        print(mode)
         for i in range(0,6):
             C[i][i] = round((np.random.randn()*sigma+100),3)*6
             for j in range(i+1,6):
@@ -35,6 +45,7 @@ def get_random_C(mode, sigma):
                 C[j][i] = C[i][j]
     
     if mode=='isotropic':
+        print(mode)
         first = round((np.random.randn()*sigma+100),3)*5
         second = round((np.random.randn()*sigma+100),3)*5
         for i in range(0,3):
@@ -46,6 +57,7 @@ def get_random_C(mode, sigma):
             C[i][i] = second
 
     if mode=='VTI':
+        print(mode)
         coeff = np.random.randn(5)*sigma+100
         C[0][0] = coeff[0]*4
         C[1][1] = coeff[0]*4
@@ -62,6 +74,7 @@ def get_random_C(mode, sigma):
                 C[j][i] = C[i][j]
                 
     if mode=='orthorhombic':
+        print(mode)
         coeff = np.zeros(9)
         for i in range(0,9):
             coeff[i] = round(np.random.randn()*sigma+100,5)
@@ -80,6 +93,7 @@ def get_random_C(mode, sigma):
         
     
     if mode=='cubic':
+        print(mode)
         coeff = np.zeros(3)
         for i in range(0,3):
             coeff[i] = round(np.random.randn()*sigma+100,5)
@@ -97,6 +111,7 @@ def get_random_C(mode, sigma):
         C[2,1] = C[0,1]
         
     if mode=='tetragonal':
+        print(mode)
         coeff = np.zeros(6)
         for i in range(0,6):
             coeff[i] = round(np.random.randn()*sigma+100,5)
@@ -114,6 +129,7 @@ def get_random_C(mode, sigma):
         C[2,1] = C[1,2]
         
     if mode=='trigonal':
+        print(mode)
         coeff = np.zeros(6)
         for i in range(0,6):
             coeff[i] = round(np.random.randn()*sigma+100,5)
@@ -137,6 +153,7 @@ def get_random_C(mode, sigma):
         C[5,4] = coeff[5]
     
     if mode=='monoclinic':
+        print(mode)
         coeff = np.zeros(13)
         for i in range(0,13):
             coeff[i] = round(np.random.randn()*sigma+100,5)
@@ -165,6 +182,8 @@ def get_random_C(mode, sigma):
     C = C*1e8
     return C, 3000.
 
+
+# -
 
 # #### Load specific VTI media
 #
@@ -442,7 +461,7 @@ def plot_directions(nus):
         ic,dc = ic*r2d, dc*r2d+90
         ax.pole(dc, ic, 'r', markersize=10,marker='*')
     ax.grid()
-    #plt.savefig('directions_plot.png')
+    plt.savefig('directions_plot.png')
     plt.show()
 
 
@@ -879,8 +898,6 @@ def get_angles(r):
 #
 
 def get_polarizations(seis):
-    n_rot = np.zeros(3)
-    n_trans = np.zeros(3)
     nt = len(seis[0,:])
     Cov = np.zeros((3,3))
     for i in range(0,3):
@@ -904,7 +921,46 @@ def get_polarizations(seis):
         return [v[:,l3], v[:,l2],0]
     # three signals, general case
     else:           
-        return [v[:,l3], v[:,l2], v[:,l1]]    
+        mode = np.zeros((4,nt))
+        for i in range(0,3):
+            eps = max(seis[i,:]) * 1e-3
+            for it in range(0,nt):
+                if abs(seis[i,it])>eps:
+                    mode[i+1,it] = 1
+        for it in range(0,nt):
+            if mode[1,it]==1 or mode[2,it]==1 or mode[3,it]==1:
+                mode[0,it] = 1
+        jt = 0
+        it = 1
+        while jt==0:
+            if mode[0,it] != mode[0,it-1]:
+                if mode[0,it]!=1:
+                    jt = it
+            it += 1        
+        it = nt-1
+        kt = 0
+        while kt==0:
+            if mode[0,it] != mode[0,it-1]:
+                if mode[0,it]!=1:
+                    kt = it
+            it -= 1
+
+        
+        width = 5
+        interval = [jt,kt-width]
+        Cov = np.zeros((2,3,3))
+        for k in range(0,2):
+            for i in range(0,3):
+                for j in range(0,3):
+                    for it in range(interval[k],interval[k]+width):
+                        Cov[k,i,j] += seis[i,it] * seis[j,it]
+        eigv = np.zeros((3,3))
+        for k in range(0,2):
+            w,v = np.linalg.eig(Cov[k,:,:])
+            l = np.argmax(w)
+            eigv[k] = v[:,l]
+        eigv[2] = np.cross(eigv[1],eigv[0])
+        return [eigv[0],eigv[2],eigv[1]]    
 
 
 # #### Determine propagation direction with 6C-measurements
@@ -1093,3 +1149,48 @@ def get_seis_strain(v, vel, nu, f):
                 - A * omega**2/(2*vel[2])*(v[2,2]*nu[1]+v[1,2]*nu[2])*(t-xr/vel[2])*np.exp(-(f**2)*(t-xr/vel[2])**2)
     
     return seis, t
+
+
+def rotate_seis_around_vector(seis,n):
+    nt = len(seis[0,:])
+    r2d = 180/np.pi
+    theta, phi = get_angles(n)
+    
+    R = np.zeros((3,3))
+    
+    # Rodrigues' rotation formula, matrix will be rotated around vector r by angle pi 
+    # x-axis=direction of propagation after rotation
+
+    
+    r = [(1. + np.cos(phi)*np.sin(theta))/2,\
+         (np.sin(phi)*np.sin(theta))/2,\
+         np.cos(theta)/2]
+    r_sum = 0
+    for i in range(0,3):
+        r_sum += r[i]**2
+    for i in range(0,3):
+        r[i] = r[i]/np.sqrt(r_sum)
+        
+    K_sq = [[-r[1]**2-r[2]**2,r[0]*r[1],r[0]*r[2]], \
+            [r[0]*r[1],-r[0]**2-r[2]**2,r[1]*r[2]], \
+            [r[0]*r[2],r[1]*r[2],-r[0]**2-r[1]**2]]
+    
+    R[0,0] = 1 + 2*K_sq[0][0]
+    R[1,0] = 2*K_sq[1][0]
+    R[2,0] = 2*K_sq[2][0]
+
+    R[0,1] = 2*K_sq[0][1]
+    R[1,1] = 1 + 2*K_sq[1][1]
+    R[2,1] = 2*K_sq[2][1]
+
+    R[0,2] = 2*K_sq[0][2]
+    R[1,2] = 2*K_sq[1][2]
+    R[2,2] = 1 + 2*K_sq[2][2]
+    
+    seis_new = np.zeros((6,nt))
+    
+    for k in range(0,3):
+        seis_new[k,:]   = R[k,0]*seis[0,:]+R[k,1]*seis[1,:]+R[k,2]*seis[2,:]
+        seis_new[k+3,:] = R[k,0]*seis[3,:]+R[k,1]*seis[4,:]+R[k,2]*seis[5,:]
+    
+    return seis_new, R
