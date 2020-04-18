@@ -18,6 +18,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 import mplstereonet
 from scipy import stats
+from rt import rt
 
 
 # #### Generating a random elastic tensor
@@ -341,6 +342,21 @@ def get_specific_VTI(name,give_thomsen=False, density=3000.00001,eps=1e-5,gamma=
 # The eigenproblem will be solved in get_eigenvals().
 # The function returns two lists containing all generated directions of propagation and corresponding $\Gamma$'s.
 
+def get_gamma(nus, C):
+    gammas = []
+    for nu in nus:
+        L = [[nu[0],0,0],[0,nu[1],0],[0,0,nu[2]],[0,nu[2],nu[1]],[nu[2],0,nu[0]],[nu[1],nu[0],0]]
+        gamma = np.zeros((3,3))
+        for i in range(0,3):
+            for j in range(i,3):
+                for k in range(0,6):
+                    for n in range(0,6):
+                        gamma[i][j] += L[k][i]*L[n][j]*C[k][n]
+                gamma[j][i] = gamma[i][j]
+        gammas.append(gamma)
+    return gammas    
+
+
 def get_direction(mode, C, N,theta_e=0.,phi_e=0.):
     nus = []
     gammas = []
@@ -452,7 +468,7 @@ def get_direction(mode, C, N,theta_e=0.,phi_e=0.):
 
 def plot_directions(nus):
     r2d = 180/np.pi
-    fig = plt.figure(figsize=(8,8))
+    fig = plt.figure(figsize=(6,6))
     plt.title('Direction of propagation')
     ax = fig.add_subplot(111, projection='stereonet')
     ax.pole(0, 0, 'black', markersize=8,marker='o')
@@ -800,6 +816,9 @@ def estimate_velocity(seis, nu,t,plot_rotated_seismo=False):
         ang[i] = angle
         
     imax = np.argmax(xc)
+    imax2 = np.argmin(xc)
+    if abs(imax)<abs(imax2):
+        imax = imax2
     amax = ang[imax]
     
     angle = amax
@@ -817,7 +836,38 @@ def estimate_velocity(seis, nu,t,plot_rotated_seismo=False):
     
     R2 = np.array([[1,0,0],[0,np.cos(angle*d2r),-np.sin(angle*d2r)],[0,np.sin(angle*d2r),np.cos(angle*d2r)]])
     R = np.dot(R,R2.transpose())
+        
+    j1 = np.argmax(xrr)
+    j1c = np.argmin(xrr)
+    j2 = np.argmax(yrr)
+    j2c = np.argmin(yrr)
+    qS1 = abs(yr[j1]/xrr[j1])/2
+    qS2 = abs(xr[j2]/yrr[j2])/2
     
+    safety = 50
+    if abs(j1-j2)<safety or abs(j1-j2c)<safety or abs(j1c-j2)<safety:    # if picks are from same peak!
+        angle = 45.
+        xr = np.cos(angle*d2r)*seis_new[1,:] -  np.sin(angle*d2r)*seis_new[2,:]
+        yr = np.sin(angle*d2r)*seis_new[1,:] +  np.cos(angle*d2r)*seis_new[2,:]
+
+        seis_new[1,:] = xr
+        seis_new[2,:] = yr
+
+        xrr = np.cos(angle*d2r)*seis_new[4,:] -  np.sin(angle*d2r)*seis_new[5,:]
+        yrr = np.sin(angle*d2r)*seis_new[4,:] +  np.cos(angle*d2r)*seis_new[5,:]
+
+        seis_new[4,:] = xrr
+        seis_new[5,:] = yrr
+
+        R2 = np.array([[1,0,0],[0,np.cos(angle*d2r),-np.sin(angle*d2r)],[0,np.sin(angle*d2r),np.cos(angle*d2r)]])
+        R = np.dot(R,R2.transpose())
+        
+        j1 = np.argmax(xrr)
+        j2 = np.argmax(yrr)
+        qS1 = abs(yr[j1]/xrr[j1])/2
+        qS2 = abs(xr[j2]/yrr[j2])/2
+    
+
     if plot_rotated_seismo:
         plt.title('Rotated Accs')
         plt.plot(t,seis_new[0,:],label='x')
@@ -835,11 +885,6 @@ def estimate_velocity(seis, nu,t,plot_rotated_seismo=False):
         plt.yticks([])
         plt.legend()
         plt.show()
-        
-    
-    qS1 = abs(max(yr,key=abs))/abs(max(xrr,key=abs))/2
-    qS2 = abs(max(xr,key=abs))/abs(max(yrr,key=abs))/2
-    
     _,uy,uz,_,ry,rz = amplitude_first_peak(seis_new)
 
     eps = max(max(xrr),max(yrr)) * 1e-9
@@ -1194,3 +1239,54 @@ def rotate_seis_around_vector(seis,n):
         seis_new[k+3,:] = R[k,0]*seis[3,:]+R[k,1]*seis[4,:]+R[k,2]*seis[5,:]
     
     return seis_new, R
+
+
+def rotate_C(C,plane,a):
+    a = a * np.pi/180
+    c = np.zeros((3,3,3,3))
+    for i in range(0,3):
+        for j in range(0,3):
+            for k in range(0,3):
+                for l in range(0,3):
+                    if i==j:
+                        alpha = i
+                    elif (i==1 and j==2) or (i==2 and j==1):
+                        alpha = 3
+                    elif (i==0 and j==2) or (i==2 and j==0):
+                        alpha = 4
+                    elif (i==1 and j==0) or (i==0 and j==1):
+                        alpha = 5
+                    if k==l:
+                        beta = k
+                    elif (k==1 and l==2) or (k==2 and l==1):
+                        beta = 3
+                    elif (k==0 and l==2) or (k==2 and l==0):
+                        beta = 4
+                    elif (k==1 and l==0) or (k==0 and l==1):
+                        beta = 5
+                    c[i,j,k,l] = C[alpha,beta]
+    cr = rt(c,plane,a)
+    C_new = np.zeros((6,6))
+    for i in range(0,3):
+        for j in range(0,3):
+            for k in range(0,3):
+                for l in range(0,3):
+                    if i==j:
+                        alpha = i
+                    elif (i==1 and j==2) or (i==2 and j==1):
+                        alpha = 3
+                    elif (i==0 and j==2) or (i==2 and j==0):
+                        alpha = 4
+                    elif (i==1 and j==0) or (i==0 and j==1):
+                        alpha = 5
+                    if k==l:
+                        beta = k
+                    elif (k==1 and l==2) or (k==2 and l==1):
+                        beta = 3
+                    elif (k==0 and l==2) or (k==2 and l==0):
+                        beta = 4
+                    elif (k==1 and l==0) or (k==0 and l==1):
+                        beta = 5
+                    C_new[alpha,beta] = cr[i,j,k,l]
+                    
+    return C_new
