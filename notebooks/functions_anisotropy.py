@@ -18,7 +18,6 @@ import numpy as np
 import matplotlib.pyplot as plt
 import mplstereonet
 from scipy import stats
-from rt import rt
 
 
 # #### Generating a random elastic tensor
@@ -991,7 +990,7 @@ def get_polarizations(seis):
             it -= 1
 
         
-        width = 5
+        width = 20
         interval = [jt,kt-width]
         Cov = np.zeros((2,3,3))
         for k in range(0,2):
@@ -1103,13 +1102,14 @@ def amplitude_first_peak(seis):
         if mode[0,it] != mode[0,it-1]:
             if mode[0,it]!=1:
                 jt = it
-        it +=1    
-    a0 = max(seis[0,:jt],key=abs)
-    a1 = max(seis[1,:jt],key=abs)
-    a2 = max(seis[2,:jt],key=abs)
-    a3 = max(seis[3,:jt],key=abs)
-    a4 = max(seis[4,:jt],key=abs)
-    a5 = max(seis[5,:jt],key=abs)
+        it +=1
+    jt = np.argmax(seis[0,:jt]**2+seis[1,:jt]**2+seis[2,:jt]**2)    
+    a0 = abs(seis[0,jt])
+    a1 = abs(seis[1,jt])
+    a2 = abs(seis[2,jt])
+    a3 = abs(seis[3,jt])
+    a4 = abs(seis[4,jt])
+    a5 = abs(seis[5,jt])
         
     return a0, a1, a2, a3, a4, a5    
 
@@ -1290,3 +1290,308 @@ def rotate_C(C,plane,a):
                     C_new[alpha,beta] = cr[i,j,k,l]
                     
     return C_new
+
+
+def get_seis_one_wavetype(mode,v,vel,nu,f):
+    
+    l1 = np.argmax(vel)
+    l3 = np.argmin(vel)
+    for i in range(0,3):
+        if l1!=i and l3!=i:
+            l2 = i
+    if mode=='qP':
+        vel_0 = vel[l1]
+        v_0 = v[:,l1]
+    elif mode=='qS1':
+        vel_0 = vel[l2]
+        v_0 = v[:,l2]
+    elif mode=='qS2':
+        vel_0 = vel[l3]
+        v_0 = v[:,l3]
+    
+    xr = max(vel)
+    tmax = xr / min(vel) * 1.3
+    nt = 30000
+    t = np.linspace(0,tmax,nt)
+    seis = np.zeros((7,nt))   
+    A = 1
+    omega = 2*np.pi*f
+    vel = vel_0
+    v = v_0
+    
+    seis[0,:] = - v[0]*A*omega**2*(t-xr/vel)*np.exp(-(f**2)*(t-xr/vel)**2) 
+    seis[1,:] = - v[1]*A*omega**2*(t-xr/vel)*np.exp(-(f**2)*(t-xr/vel)**2)
+    seis[2,:] = - v[2]*A*omega**2*(t-xr/vel)*np.exp(-(f**2)*(t-xr/vel)**2)
+     
+    
+    seis[3,:] =- np.cross(nu,v)[0]*A*omega**2/(2*vel)*(t-xr/vel)*np.exp(-(f**2)*(t-xr/vel)**2)
+    seis[4,:] =- np.cross(nu,v)[1]*A*omega**2/(2*vel)*(t-xr/vel)*np.exp(-(f**2)*(t-xr/vel)**2)
+    seis[5,:] =- np.cross(nu,v)[2]*A*omega**2/(2*vel)*(t-xr/vel)*np.exp(-(f**2)*(t-xr/vel)**2)
+    
+    seis[6,:] = - A * omega**2/vel*v[2]*nu[2]*(t-xr/vel)*np.exp(-(f**2)*(t-xr/vel)**2) 
+    
+    return seis, t
+
+
+def plot_7C(seis,t):
+    a1 = abs(seis[0:3][:].max())
+    plt.figure(figsize=(8,4))
+    plt.title('Translation')
+    
+    plt.plot(t,seis[0,:],label='x')
+    plt.plot(t,seis[1,:]-a1,label='y')
+    plt.plot(t,seis[2,:]-2*a1,label='z')
+    plt.legend()
+    plt.yticks([])
+    plt.show()
+    a2 = seis[3:6][:].max()
+    plt.figure(figsize=(8,4))
+    plt.title('Rotation')
+    plt.plot(t,seis[3,:],label='rot_x')
+    plt.plot(t,seis[4,:]-a2,label='rot_y')
+    plt.plot(t,seis[5,:]-2*a2,label='rot_z')
+    plt.legend()
+    plt.yticks([])
+    plt.show()
+    
+    plt.figure(figsize=(8,4))
+    plt.title('Strain')
+    plt.plot(t,seis[6,:],color='green',label='strain_zz')
+    plt.legend()
+    plt.yticks([])
+    plt.show()
+
+
+def add_new_data(mode,d,g,nu_e,vel_e,n_trans,density):
+    d = list(d)
+    g = list(g)
+    QT = np.array(n_trans)
+    Q = QT.transpose()
+    if np.shape(Q)==(3,3):
+        D = density * np.array([[vel_e[0]**2,0,0],[0,vel_e[1]**2,0],[0,0,vel_e[2]**2]])
+        GAMMA = np.dot(np.dot(Q,D),QT)
+        d.extend([GAMMA[0,0],GAMMA[1,1],GAMMA[2,2],GAMMA[0,1],GAMMA[0,2],GAMMA[1,2]])
+        if mode=='triclinic':
+            GT = np.array([    [nu_e[0]**2,0,0,0,0,0],\
+                               [0,nu_e[1]**2,0,0,0,0],\
+                               [0,0,nu_e[2]**2,0,0,0],\
+                               [0,0,0,nu_e[0]*nu_e[1],0,0],\
+                               [0,0,0,0,nu_e[0]*nu_e[2],0],\
+                               [0,0,0,0,0,nu_e[1]*nu_e[2]],\
+                               [0,0,0,nu_e[0]*nu_e[2],nu_e[0]*nu_e[1],0],\
+                               [0,0,0,nu_e[1]*nu_e[2],0,nu_e[0]*nu_e[1]],\
+                               [0,0,0,0,nu_e[1]*nu_e[2],nu_e[0]*nu_e[2]],\
+                               [2*nu_e[0]*nu_e[2],0,0,0,nu_e[0]**2,0],\
+                               [2*nu_e[0]*nu_e[1],0,0,nu_e[0]**2,0,0],\
+                               [0,2*nu_e[1]*nu_e[2],0,0,0,nu_e[1]**2],\
+                               [0,2*nu_e[0]*nu_e[1],0,nu_e[1]**2,0,0],\
+                               [0,0,2*nu_e[1]*nu_e[2],0,0,nu_e[2]**2],\
+                               [0,0,2*nu_e[0]*nu_e[2],0,nu_e[2]**2,0],\
+                               [0,nu_e[2]**2,nu_e[1]**2,0,0,nu_e[1]*nu_e[2]],\
+                               [nu_e[2]**2,0,nu_e[0]**2,0,nu_e[0]*nu_e[2],0],\
+                               [nu_e[1]**2,nu_e[0]**2,0,nu_e[0]*nu_e[1],0,0],\
+                               [0,0,2*nu_e[0]*nu_e[1],nu_e[2]**2,nu_e[1]*nu_e[2],nu_e[0]*nu_e[2]],\
+                               [0,2*nu_e[0]*nu_e[2],0,nu_e[1]*nu_e[2],nu_e[1]**2,nu_e[0]*nu_e[1]],\
+                               [2*nu_e[1]*nu_e[2],0,0,nu_e[0]*nu_e[2],nu_e[0]*nu_e[1],nu_e[0]**2]
+                      ])
+            G = GT.transpose()
+        elif mode=='cubic':
+            G = np.array([[nu_e[0]**2,0,nu_e[1]**2+nu_e[2]**2],\
+                          [nu_e[1]**2,0,nu_e[0]**2+nu_e[2]**2],\
+                          [nu_e[2]**2,0,nu_e[0]**2+nu_e[1]**2],\
+                          [0,nu_e[0]*nu_e[1],nu_e[0]*nu_e[1]],\
+                          [0,nu_e[0]*nu_e[2],nu_e[0]*nu_e[2]],\
+                          [0,nu_e[1]*nu_e[2],nu_e[1]*nu_e[2]]
+                         ])
+        
+        elif mode=='VTI':
+            G = np.array([[nu_e[0]**2,0,0,nu_e[2]**2,nu_e[1]**2],\
+                       [nu_e[1]**2,0,0,nu_e[2]**2,nu_e[0]**2],\
+                       [0,nu_e[2]**2,0,nu_e[0]**2+nu_e[1]**2,0],\
+                       [nu_e[0]*nu_e[1],0,0,0,-nu_e[0]*nu_e[1]],\
+                       [0,0,nu_e[0]*nu_e[2],nu_e[0]*nu_e[2],0],\
+                       [0,0,nu_e[1]*nu_e[2],nu_e[1]*nu_e[2],0]
+                        ])
+        elif mode=='tetragonal':
+            G = np.array([[nu_e[0]**2,0,0,0,nu_e[2]**2,nu_e[1]**2],\
+                          [nu_e[1]**2,0,0,0,nu_e[2]**2,nu_e[0]**2],\
+                          [0,nu_e[2]**2,0,0,nu_e[0]**2+nu_e[1]**2,0],\
+                          [0,0,nu_e[0]*nu_e[1],0,0,nu_e[0]*nu_e[1]],\
+                          [0,0,0,nu_e[0]*nu_e[2],nu_e[0]*nu_e[2],0],\
+                          [0,0,0,nu_e[1]*nu_e[2],nu_e[1]*nu_e[2],0]
+                         ])
+        elif mode=='trigonal':
+            G = np.array([[nu_e[0]**2,0,0,2*nu_e[1]*nu_e[2],nu_e[2]**2,nu_e[1]**2],\
+                          [nu_e[1]**2,0,0,-2*nu_e[1]*nu_e[2],nu_e[2]**2,nu_e[0]**2],\
+                          [0,nu_e[2]**2,0,0,nu_e[0]**2+nu_e[1]**2,0],\
+                          [nu_e[0]*nu_e[1],0,0,2*nu_e[0]*nu_e[2],0,-nu_e[0]*nu_e[1]],\
+                          [0,0,nu_e[0]*nu_e[2],2*nu_e[0]*nu_e[1],nu_e[0]*nu_e[2],0],\
+                          [0,0,nu_e[1]*nu_e[2],nu_e[0]**2-nu_e[1]**2,nu_e[1]*nu_e[2],0]\
+                         ])
+        elif mode=='orthorhombic':
+            G = np.array([[nu_e[0]**2,0,0,0,0,0,0,nu_e[2]**2,nu_e[1]**2],\
+                          [0,nu_e[1]**2,0,0,0,0,nu_e[2]**2,0,nu_e[0]**2],\
+                          [0,0,nu_e[2]**2,0,0,0,nu_e[1]**2,nu_e[0]**2,0],\
+                          [0,0,0,nu_e[0]*nu_e[1],0,0,0,0,nu_e[0]*nu_e[1]],\
+                          [0,0,0,0,nu_e[0]*nu_e[2],0,0,nu_e[0]*nu_e[2],0],\
+                          [0,0,0,0,0,nu_e[1]*nu_e[2],nu_e[1]*nu_e[2],0,0]\
+                         ])
+        g.extend(G)
+    return np.array(d), np.array(g)
+
+
+def sort_elastic_coeff(mode,m):
+    C = np.zeros((6,6))
+    if mode=='triclinic':
+        C[0,0] = m[0] 
+        C[1,1] = m[1]
+        C[2,2] = m[2]
+        C[0,1] = m[3]
+        C[0,2] = m[4]
+        C[1,2] = m[5]
+        C[0,3] = m[6]
+        C[1,4] = m[7]
+        C[2,5] = m[8]
+        C[0,4] = m[9]
+        C[0,5] = m[10]
+        C[1,3] = m[11]
+        C[1,5] = m[12]
+        C[2,3] = m[13]
+        C[2,4] = m[14]
+        C[3,3] = m[15]
+        C[4,4] = m[16]
+        C[5,5] = m[17]
+        C[3,4] = m[18]
+        C[3,5] = m[19]
+        C[4,5] = m[20]
+    elif mode=='cubic':
+        C[0,0] = m[0]
+        C[1,1] = m[0]
+        C[2,2] = m[0]
+        C[0,1] = m[1]
+        C[0,2] = m[1]
+        C[1,2] = m[1]
+        C[3,3] = m[2]
+        C[4,4] = m[2]
+        C[5,5] = m[2]
+    elif mode=='VTI':
+        C[0,0] = m[0]
+        C[1,1] = m[0]
+        C[2,2] = m[1]
+        C[0,2] = m[2]
+        C[1,2] = m[2]
+        C[3,3] = m[3]
+        C[4,4] = m[3]
+        C[5,5] = m[4]
+        C[0,1] = C[1,1]-2*C[5,5]
+    elif mode=='tetragonal':
+        C[0,0] = m[0]
+        C[1,1] = m[0]
+        C[2,2] = m[1]
+        C[0,1] = m[2]
+        C[0,2] = m[3]
+        C[1,2] = m[3]
+        C[3,3] = m[4]
+        C[4,4] = m[4]
+        C[5,5] = m[5]   
+    elif mode=='trigonal':
+        C[0,0] = m[0]
+        C[1,1] = m[0]
+        C[2,2] = m[1]
+        C[0,2] = m[2]
+        C[1,2] = m[2]
+        C[0,3] = m[3]
+        C[1,3] = - C[0,3]
+        C[3,3] = m[4]
+        C[4,4] = m[4]
+        C[4,5] = C[0,3]
+        C[5,5] = m[5]
+        C[0,1] = C[1,1]-2*C[5,5]
+    elif mode=='orthorhombic':
+        C[0,0] = m[0]
+        C[1,1] = m[1]
+        C[2,2] = m[2]
+        C[0,1] = m[3]
+        C[0,2] = m[4]
+        C[1,2] = m[5]
+        C[3,3] = m[6]
+        C[4,4] = m[7]
+        C[5,5] = m[8]
+                       
+    for i in range(0,6):
+        for j in range(i,6):
+            C[j,i] = C[i,j]      
+    return C        
+
+
+def get_misfit(seis,t,nu,C_e, f, density):
+    gammas_syn = get_gamma(nu, C_e)
+    misfits = []
+    for j in range(0,len(nu)):
+        vel_syn, v_syn = get_eigenvals(gammas_syn[j], density)
+        seis_syn, t_syn = get_seis(v_syn,vel_syn,nu[j],f)
+        misfit = 0
+        nt = len(t_syn)
+        #for i in range(0,6):
+        #    plt.plot(t[j],seis[j][i,:])
+        #    plt.plot(t_syn,seis_syn[i,:])
+        #    plt.show()
+        for k in range(0,6):
+            amax = max(seis[j][k,:])
+            for it in range(0,nt):
+                misfit += ((seis_syn[k,it]-seis[j][k,it])/amax)**2
+        misfits.append(misfit)        
+    return misfits       
+
+
+def rt(c,plane,a):
+    """
+    Rotates a 4-th order tensor with angle a around plane = 1, 2, 3
+    """
+    
+    r =  np.zeros([3,3])
+    cr = np.zeros([3,3,3,3])
+
+    if plane == 1:
+    # Rotation around x
+        r[0,0] = 1.
+        r[1,1] = np.cos(a)
+        r[1,2] = np.sin(a)
+        r[2,1] =-np.sin(a)
+        r[2,2] = np.cos(a)
+    elif plane == 2:
+    # Rotation around y
+        r[1,1] = 1.
+        r[0,0] = np.cos(a)
+        r[0,2] = np.sin(a)
+        r[2,0] =-np.sin(a)
+        r[2,2] = np.cos(a)
+        
+    elif plane == 3:
+    # Rotation around z
+        r[2,2] = 1.
+        r[0,0] = np.cos(a)
+        r[1,0] = np.sin(a)
+        r[0,1] =-np.sin(a)
+        r[1,1] = np.cos(a)
+        
+    else:
+        raise NotImplementedError
+        
+        
+    # tensor rotation
+
+    for i in range(3):
+        for j in range(3):
+            for k in range(3):
+                for l in range(3):
+                    sum = 0.
+                    for ii in range(3):
+                        for jj in range(3):
+                            for kk in range(3):
+                                for ll in range(3):
+                                    sum=sum+r[i,ii]*r[j,jj]*r[k,kk]*r[l,ll]*c[ii,jj,kk,ll]
+                    cr[i,j,k,l]=sum
+    
+    
+    return cr
