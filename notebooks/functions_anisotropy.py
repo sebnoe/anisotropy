@@ -522,17 +522,19 @@ def get_eigenvals(gamma, density):
 #
 # In order to produce a synthetic signal, the exponential terms are replaced by an arbitrarily chosen source function. Here, it is chosen such that acceleration and rotation rate (both second derivatives) are scaled by the first derivative of a gaussian. Normalizations of the gaussians are not considered here. The signal for each wavefront will be longer for lower frequencies and short for high frequencies. 
 #
-# Practically, the distance between source and receiver must be given. Here, i want the fastest wavefront to arrive after roughly one second and determine the length of the entire signal according to the slowest wavefront. 
+# Practically, the distance between source and receiver must be given. Here, i want the fastest wavefront to arrive after roughly five seconds and determine the length of the entire signal according to the slowest wavefront. 
 #
 # The six-component measurement is returned as well as the time markers.
 #
 #
 
 def get_seis(v,vel,nu,f):
-    xr = max(vel)
+    xr = max(vel)*5.
+    tmin = xr / max(vel) * 0.3
     tmax = xr / min(vel) * 1.3
-    nt = 30000
-    t = np.linspace(0,tmax,nt)
+    fs = 100
+    nt = int(np.floor((tmax-tmin) * fs)+1) 
+    t = np.linspace(tmin,tmax,nt)
     seis = np.zeros((6,nt))   
     A = 1.
     omega = 2*np.pi*f
