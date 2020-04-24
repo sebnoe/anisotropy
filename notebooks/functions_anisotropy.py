@@ -528,12 +528,11 @@ def get_eigenvals(gamma, density):
 #
 #
 
-def get_seis(v,vel,nu,f):
+def get_seis(v,vel,nu,f,fs):
     xr = max(vel)*5.
     tmin = xr / max(vel) * 0.3
     tmax = xr / min(vel) * 1.3
-    fs = 100
-    nt = int(np.floor((tmax-tmin) * fs)+1) 
+    nt = int(((tmax-tmin) * fs)+1) 
     t = np.linspace(tmin,tmax,nt)
     seis = np.zeros((6,nt))   
     A = 1.
@@ -1141,11 +1140,12 @@ def plotseis_strain(seis,t,nu):
     plt.show()
 
 
-def get_seis_strain(v, vel, nu, f):
-    xr = max(vel)
+def get_seis_strain(v, vel, nu, f, fs):
+    xr = max(vel)*5.
+    tmin = xr / max(vel) * 0.3
     tmax = xr / min(vel) * 1.3
-    nt = 30000
-    t = np.linspace(0,tmax,nt)
+    nt = int(((tmax-tmin) * fs)+1) 
+    t = np.linspace(tmin,tmax,nt)
     seis = np.zeros((12,nt))   
     A = 1
     omega = 2*np.pi*f
@@ -1294,7 +1294,7 @@ def rotate_C(C,plane,a):
     return C_new
 
 
-def get_seis_one_wavetype(mode,v,vel,nu,f):
+def get_seis_one_wavetype(mode,v,vel,nu,f,fs):
     
     l1 = np.argmax(vel)
     l3 = np.argmin(vel)
@@ -1311,10 +1311,11 @@ def get_seis_one_wavetype(mode,v,vel,nu,f):
         vel_0 = vel[l3]
         v_0 = v[:,l3]
     
-    xr = max(vel)
+    xr = max(vel)*5.
+    tmin = xr / max(vel) * 0.3
     tmax = xr / min(vel) * 1.3
-    nt = 30000
-    t = np.linspace(0,tmax,nt)
+    nt = int(((tmax-tmin) * fs)+1) 
+    t = np.linspace(tmin,tmax,nt)
     seis = np.zeros((7,nt))   
     A = 1
     omega = 2*np.pi*f
@@ -1526,12 +1527,12 @@ def sort_elastic_coeff(mode,m):
     return C        
 
 
-def get_misfit(seis,t,nu,C_e, f, density):
+def get_misfit(seis,t,nu,C_e, f, density,fs):
     gammas_syn = get_gamma(nu, C_e)
     misfits = []
     for j in range(0,len(nu)):
         vel_syn, v_syn = get_eigenvals(gammas_syn[j], density)
-        seis_syn, t_syn = get_seis(v_syn,vel_syn,nu[j],f)
+        seis_syn, t_syn = get_seis(v_syn,vel_syn,nu[j],f,fs)
         misfit = 0
         nt = len(t_syn)
         #for i in range(0,6):
