@@ -1534,7 +1534,7 @@ def get_misfit(seis,t,nu,C_e, f, density,fs):
         vel_syn, v_syn = get_eigenvals(gammas_syn[j], density)
         seis_syn, t_syn = get_seis(v_syn,vel_syn,nu[j],f,fs)
         misfit = 0
-        nt = len(t_syn)
+        nt = min(len(t_syn),len(t))
         #for i in range(0,6):
         #    plt.plot(t[j],seis[j][i,:])
         #    plt.plot(t_syn,seis_syn[i,:])
