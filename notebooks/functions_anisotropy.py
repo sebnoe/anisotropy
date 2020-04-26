@@ -18,6 +18,8 @@ import numpy as np
 import matplotlib.pyplot as plt
 import mplstereonet
 from scipy import stats
+from scipy.signal import butter,filtfilt
+from scipy.linalg import null_space
 
 
 # #### Generating a random elastic tensor
@@ -39,9 +41,15 @@ def get_random_C(mode, sigma):
     if mode=='triclinic':
         print(mode)
         for i in range(0,6):
-            C[i][i] = round((np.random.randn()*sigma+100),3)*6
+            if i<3:
+                C[i][i] = round((np.random.randn()*sigma+100),3)*6
+            else:
+                C[i][i] = round((np.random.randn()*sigma+100),3)*2
             for j in range(i+1,6):
-                C[i][j] = round((np.random.randn()*sigma+100),3)
+                if i<3 and j<3:
+                    C[i][j] = round((np.random.randn()*sigma+100),3)*3
+                else:    
+                    C[i][j] = round((np.random.randn()*sigma+100),3)
                 C[j][i] = C[i][j]
     
     if mode=='isotropic':
@@ -757,7 +765,7 @@ def plot_particle_motions(seis):
 # The function returns three estimated velocities, the rotated seismograms and the Rotation matrix.
 #
 
-def estimate_velocity(seis, nu,t,plot_rotated_seismo=False):
+def estimate_velocity(seis, nu,t):
     nt = len(seis[0,:])
     r2d = 180/np.pi
     vel_e = np.zeros(2)
@@ -844,7 +852,7 @@ def estimate_velocity(seis, nu,t,plot_rotated_seismo=False):
     qS1 = abs(yr[j1]/xrr[j1])/2
     qS2 = abs(xr[j2]/yrr[j2])/2
     
-    safety = 50
+    safety = nt//100
     if abs(j1-j2)<safety or abs(j1-j2c)<safety or abs(j1c-j2)<safety:    # if picks are from same peak!
         angle = 45.
         xr = np.cos(angle*d2r)*seis_new[1,:] -  np.sin(angle*d2r)*seis_new[2,:]
@@ -868,31 +876,14 @@ def estimate_velocity(seis, nu,t,plot_rotated_seismo=False):
         qS2 = abs(xr[j2]/yrr[j2])/2
     
 
-    if plot_rotated_seismo:
-        plt.title('Rotated Accs')
-        plt.plot(t,seis_new[0,:],label='x')
-        plt.plot(t,seis_new[1,:]-max(seis_new[0,:]),label='y')
-        plt.plot(t,seis_new[2,:]-2*max(seis_new[0,:]),label='z')
-        plt.yticks([])
-        plt.legend()
-        plt.show()
-
-
-        plt.title('Rotated Rotation Rates')
-        plt.plot(t,seis_new[3,:],label='x')
-        plt.plot(t,seis_new[4,:]-max(max(seis_new[4,:]),max(seis_new[5,:])),label='y')
-        plt.plot(t,seis_new[5,:]-2*max(max(seis_new[4,:]),max(seis_new[5,:])),label='z')
-        plt.yticks([])
-        plt.legend()
-        plt.show()
-    _,uy,uz,_,ry,rz = amplitude_first_peak(seis_new)
-
-    eps = max(max(xrr),max(yrr)) * 1e-9
-    if abs(ry)>=eps or abs(rz)>=eps:
+    ip = np.argmax(seis_new[0,:])
+    uy = seis_new[1,ip]
+    uz = seis_new[2,ip]
+    ry = seis_new[4,ip]
+    rz = seis_new[5,ip]
     
-        qP = .5 * np.sqrt(uy**2+uz**2)/np.sqrt(ry**2+rz**2)
-    else:
-        qP = 0.
+    qP = .5 * np.sqrt(uy**2+uz**2)/np.sqrt(ry**2+rz**2)
+        
     if qS1<qS2:
         qS1, qS2 = qS2, qS1
     
@@ -942,7 +933,7 @@ def get_angles(r):
 # Looking at rotational measurements for anisotropic media, there will be three distinct arrivals. But because rotational motions all happen inside the plane perpendicular to the propagation direction (assuming it is constant for all three wavefronts), the third polarization will not add a third dimension to the covariance matrix and thus the eigenproblem will yield a zero-eigenvalue.  
 #
 
-def get_polarizations(seis):
+def get_polarizations(seis,mode):
     nt = len(seis[0,:])
     Cov = np.zeros((3,3))
     for i in range(0,3):
@@ -951,11 +942,16 @@ def get_polarizations(seis):
                 Cov[i][j] += 1/nt**2 * seis[i,it] * seis[j,it] * (nt-it)**3
     
     w,v = np.linalg.eig(Cov)
+    for i in range(0,3):
+        if w[i]<0:
+            w[i] = -w[i]
     l3 = np.argmax(w)
     l1 = np.argmin(w)
     for i in range(0,3):
         if l1!=i and l3!=i:
             l2 = i
+    if mode=='rot':
+        return [v[:,l3], v[:,l2],0]
     
     eps = max(w)*1e-9
     # just one signal, e.g. rotations in isotropic media
@@ -968,7 +964,7 @@ def get_polarizations(seis):
     else:           
         mode = np.zeros((4,nt))
         for i in range(0,3):
-            eps = max(seis[i,:]) * 1e-3
+            eps = max(seis[i,:]) * 0.7
             for it in range(0,nt):
                 if abs(seis[i,it])>eps:
                     mode[i+1,it] = 1
@@ -991,7 +987,7 @@ def get_polarizations(seis):
             it -= 1
 
         
-        width = 20
+        width = 5
         interval = [jt,kt-width]
         Cov = np.zeros((2,3,3))
         for k in range(0,2):
@@ -1036,22 +1032,12 @@ def get_polarizations(seis):
 #
 
 def get_propagation_direction(seis):
-    n_trans = get_polarizations(seis[:3])
-    n_rot = get_polarizations(seis[3:])
-    nt1,nt2,nt3 = n_trans
+    n_rot = get_polarizations(seis[3:],'rot')
     nr1,nr2,nr3 = n_rot
-    if np.shape(nr2)==():
-        if nt1[2]<0:
-            return -nt1
-        else:
-            return nt1
-    elif np.shape(nr3)==():
-        nu_e = np.cross(nr1,nr2)
-        if nu_e[2]<0:
-            nu_e = -nu_e
-        return nu_e            
-    else:
-        print('Shouldn''t exist! Error in get_propagation_direction()')  
+    nu_e = np.cross(nr1,nr2)
+    if nu_e[2]<0:
+        nu_e = -nu_e
+    return nu_e            
 
 
 # #### extract shear wave velocities
@@ -1542,7 +1528,7 @@ def get_misfit(seis,t,nu,C_e, f, density,fs):
         for k in range(0,6):
             amax = max(seis[j][k,:])
             for it in range(0,nt):
-                misfit += ((seis_syn[k,it]-seis[j][k,it])/amax)**2
+                misfit += ((seis_syn[k,it]-seis[j][k,it])/amax)**2 / nt
         misfits.append(misfit)        
     return misfits       
 
@@ -1598,3 +1584,236 @@ def rt(c,plane,a):
     
     
     return cr
+
+
+def plot_tensor_estimation(C,C_e):
+    param = ['C11','C22','C33','C12','C13','C23','C44','C55','C66','C45','C46','C56','C14','C15','C16','C24',\
+         'C25','C26','C34','C35','C36']
+    c_true = [C[0,0],C[1,1],C[2,2],C[0,1],C[0,2],C[1,2],C[3,3],C[4,4],C[5,5],C[3,4],C[3,5],C[4,5],C[0,3],C[0,4],\
+              C[0,5],C[1,3],C[1,4],C[1,5],C[2,3],C[2,4],C[2,5]]
+    c_est = [C_e[0,0],C_e[1,1],C_e[2,2],C_e[0,1],C_e[0,2],C_e[1,2],C_e[3,3],C_e[4,4],C_e[5,5],C_e[3,4],C_e[3,5],\
+             C_e[4,5],C_e[0,3],C_e[0,4],C_e[0,5],C_e[1,3],C_e[1,4],C_e[1,5],C_e[2,3],C_e[2,4],C_e[2,5]]
+    
+    plt.figure(figsize=(10,7))
+    plt.scatter(param,c_est,color='blue',marker='d',label='Est 7C',s=70,edgecolors='black')
+    plt.scatter(param,c_true,color='red',marker='x',label='True',s=80,edgecolors='black')
+    plt.grid()
+    plt.legend(loc=1)
+    plt.show()
+
+
+def plot_tensor_estimation2(C,C_e,C_e2):
+    param = ['C11','C22','C33','C12','C13','C23','C44','C55','C66','C45','C46','C56','C14','C15','C16','C24',\
+         'C25','C26','C34','C35','C36']
+    c_true = [C[0,0],C[1,1],C[2,2],C[0,1],C[0,2],C[1,2],C[3,3],C[4,4],C[5,5],C[3,4],C[3,5],C[4,5],C[0,3],C[0,4],\
+              C[0,5],C[1,3],C[1,4],C[1,5],C[2,3],C[2,4],C[2,5]]
+    c_est = [C_e[0,0],C_e[1,1],C_e[2,2],C_e[0,1],C_e[0,2],C_e[1,2],C_e[3,3],C_e[4,4],C_e[5,5],C_e[3,4],C_e[3,5],\
+             C_e[4,5],C_e[0,3],C_e[0,4],C_e[0,5],C_e[1,3],C_e[1,4],C_e[1,5],C_e[2,3],C_e[2,4],C_e[2,5]]
+    c_est2 = [C_e2[0,0],C_e2[1,1],C_e2[2,2],C_e2[0,1],C_e2[0,2],C_e2[1,2],C_e2[3,3],C_e2[4,4],C_e2[5,5],C_e2[3,4],\
+              C_e2[3,5],C_e2[4,5],C_e2[0,3],C_e2[0,4],C_e2[0,5],C_e2[1,3],C_e2[1,4],C_e2[1,5],C_e2[2,3],C_e2[2,4],\
+              C_e2[2,5]]
+    
+    plt.figure(figsize=(10,7))
+    plt.scatter(param,c_est,color='blue',marker='d',label='Est 7C',s=70,edgecolors='black')
+    plt.scatter(param,c_est2,color='lime',label='Est 6C',s=70,edgecolors='black')
+    plt.scatter(param,c_true,color='red',marker='x',label='True',s=80,edgecolors='black')
+    plt.grid()
+    plt.legend(loc=1)
+    plt.show()
+
+
+def make_some_noise(seis,SNR_dB_u,SNR_dB_r,SNR_dB_s=100.):
+    c, nt = np.shape(seis)
+    seis_noise = np.zeros((c,nt))
+    seis_noise[0:3] = awgn(seis[0:3],SNR_dB_u)
+    seis_noise[3:6] = awgn(seis[3:6],SNR_dB_r)
+    if c>6:
+        seis_noise[6:] = awgn(seis[6:],SNR_dB_s)
+    return seis_noise
+
+
+def lowpass(seis,f,fs,order=5):
+    c, nt = np.shape(seis)
+    seis_fil = np.zeros((c,nt))
+    for i in range(0,c):
+        seis_fil[i,:] = butter_lowpass_filter(seis[i,:], f, fs,order )
+    return seis_fil
+
+
+# +
+def awgn(x,SNR_dB):
+    L = x.size
+    SNR = 10**(SNR_dB/10)                  # SNR to linear scale
+    Esym = np.sum(abs(x)**2,axis=None)/(L) # calculate actual symbol energy
+    N0 = Esym / SNR                        # find the noise spectral density
+    noiseSigma = np.sqrt(N0)               # standard deviation for AWGN Noise
+    n = noiseSigma * np.random.randn(x[:,0].size,x[0,:].size) #computed noise
+    return x + n                           # received signal
+
+def butter_lowpass_filter(data, cutoff, fs, order):
+    nyq = 0.5 * fs
+    normal_cutoff = cutoff / nyq
+    b, a = butter(order, normal_cutoff, btype='low', analog=False)
+    y = filtfilt(b, a, data)
+    return y
+
+
+# -
+
+def estimate_velocity_7C(seis, nu,t, plot_rotated_seismo=False):
+    nt = len(seis[0,:])
+    r2d = 180/np.pi    
+    theta, phi = get_angles(nu)
+    R = np.zeros((3,3))
+    r = [(1. + np.cos(phi)*np.sin(theta))/2,\
+         (np.sin(phi)*np.sin(theta))/2,\
+         np.cos(theta)/2]
+    r_sum = 0
+    for i in range(0,3):
+        r_sum += r[i]**2
+    for i in range(0,3):
+        r[i] = r[i]/np.sqrt(r_sum)
+        
+    K_sq = [[-r[1]**2-r[2]**2,r[0]*r[1],r[0]*r[2]], \
+            [r[0]*r[1],-r[0]**2-r[2]**2,r[1]*r[2]], \
+            [r[0]*r[2],r[1]*r[2],-r[0]**2-r[1]**2]]
+    
+    R[0,0] = 1 + 2*K_sq[0][0]
+    R[1,0] = 2*K_sq[1][0]
+    R[2,0] = 2*K_sq[2][0]
+
+    R[0,1] = 2*K_sq[0][1]
+    R[1,1] = 1 + 2*K_sq[1][1]
+    R[2,1] = 2*K_sq[2][1]
+
+    R[0,2] = 2*K_sq[0][2]
+    R[1,2] = 2*K_sq[1][2]
+    R[2,2] = 1 + 2*K_sq[2][2]
+    
+    seis_new = np.zeros((6,nt))
+    
+    for k in range(0,3):
+        seis_new[k,:]   = R[k,0]*seis[0,:]+R[k,1]*seis[1,:]+R[k,2]*seis[2,:]
+        seis_new[k+3,:] = R[k,0]*seis[3,:]+R[k,1]*seis[4,:]+R[k,2]*seis[5,:]
+    
+    
+    ip = np.argmax(seis_new[0,:])
+    uz = seis[2,ip]
+    ezz = seis[6,ip]
+    qP = abs(uz*nu[2]/ezz)
+    
+    
+    nang = 721
+    xc  = np.zeros(nang)
+    ang = np.linspace(0,180,nang)
+    d2r = r2d**-1
+
+    for i in range(nang):
+        angle = ang[i]
+        xr = np.cos(angle*d2r)*seis_new[1,:] -  np.sin(angle*d2r)*seis_new[2,:]
+        yr = np.sin(angle*d2r)*seis_new[1,:] +  np.cos(angle*d2r)*seis_new[2,:]
+        junk = np.corrcoef(xr, yr)
+        xc[i] = junk[1,0]
+        ang[i] = angle
+        
+    imax = np.argmax(xc)
+    imax2 = np.argmin(xc)
+    if abs(imax)<abs(imax2):
+        imax = imax2
+    amax = ang[imax]
+    
+    angle = amax
+    xr = np.cos(angle*d2r)*seis_new[1,:] -  np.sin(angle*d2r)*seis_new[2,:]
+    yr = np.sin(angle*d2r)*seis_new[1,:] +  np.cos(angle*d2r)*seis_new[2,:]
+    
+    seis_new[1,:] = xr
+    seis_new[2,:] = yr
+    
+    xrr = np.cos(angle*d2r)*seis_new[4,:] -  np.sin(angle*d2r)*seis_new[5,:]
+    yrr = np.sin(angle*d2r)*seis_new[4,:] +  np.cos(angle*d2r)*seis_new[5,:]
+    
+    seis_new[4,:] = xrr
+    seis_new[5,:] = yrr
+    
+    R2 = np.array([[1,0,0],[0,np.cos(angle*d2r),-np.sin(angle*d2r)],[0,np.sin(angle*d2r),np.cos(angle*d2r)]])
+    R = np.dot(R,R2.transpose())
+        
+    j1 = np.argmax(xrr)
+    j1c = np.argmin(xrr)
+    j2 = np.argmax(yrr)
+    j2c = np.argmin(yrr)
+    qS1 = abs(yr[j1]/xrr[j1])/2
+    qS2 = abs(xr[j2]/yrr[j2])/2
+    
+    safety = nt//100
+    if abs(j1-j2)<safety or abs(j1-j2c)<safety or abs(j1c-j2)<safety:    # if picks are from same peak!
+        angle = 45.
+        xr = np.cos(angle*d2r)*seis_new[1,:] -  np.sin(angle*d2r)*seis_new[2,:]
+        yr = np.sin(angle*d2r)*seis_new[1,:] +  np.cos(angle*d2r)*seis_new[2,:]
+
+        seis_new[1,:] = xr
+        seis_new[2,:] = yr
+
+        xrr = np.cos(angle*d2r)*seis_new[4,:] -  np.sin(angle*d2r)*seis_new[5,:]
+        yrr = np.sin(angle*d2r)*seis_new[4,:] +  np.cos(angle*d2r)*seis_new[5,:]
+
+        seis_new[4,:] = xrr
+        seis_new[5,:] = yrr
+
+        R2 = np.array([[1,0,0],[0,np.cos(angle*d2r),-np.sin(angle*d2r)],[0,np.sin(angle*d2r),np.cos(angle*d2r)]])
+        R = np.dot(R,R2.transpose())
+        
+        j1 = np.argmax(xrr)
+        j2 = np.argmax(yrr)
+        qS1 = abs(yr[j1]/xrr[j1])/2
+        qS2 = abs(xr[j2]/yrr[j2])/2
+    
+        
+    if qS1<qS2:
+        qS1, qS2 = qS2, qS1
+    
+    vel_e = [qP, qS1, qS2]
+    
+    return vel_e, seis_new, R
+
+
+def get_seis_one_wavetype(mode,v,vel,nu,f,fs):
+    
+    l1 = np.argmax(vel)
+    l3 = np.argmin(vel)
+    for i in range(0,3):
+        if l1!=i and l3!=i:
+            l2 = i
+    if mode=='qP':
+        vel_0 = vel[l1]
+        v_0 = v[:,l1]
+    elif mode=='qS1':
+        vel_0 = vel[l2]
+        v_0 = v[:,l2]
+    elif mode=='qS2':
+        vel_0 = vel[l3]
+        v_0 = v[:,l3]
+    
+    xr = max(vel)*5.
+    tmin = xr / max(vel) * 0.3
+    tmax = xr / min(vel) * 1.3
+    nt = int(((tmax-tmin) * fs)+1) 
+    t = np.linspace(tmin,tmax,nt)
+    seis = np.zeros((7,nt))   
+    A = 1
+    omega = 2*np.pi*f
+    vel = vel_0
+    v = v_0
+    
+    seis[0,:] = - v[0]*A*omega**2*(t-xr/vel)*np.exp(-(f**2)*(t-xr/vel)**2) 
+    seis[1,:] = - v[1]*A*omega**2*(t-xr/vel)*np.exp(-(f**2)*(t-xr/vel)**2)
+    seis[2,:] = - v[2]*A*omega**2*(t-xr/vel)*np.exp(-(f**2)*(t-xr/vel)**2)
+     
+    
+    seis[3,:] =- np.cross(nu,v)[0]*A*omega**2/(2*vel)*(t-xr/vel)*np.exp(-(f**2)*(t-xr/vel)**2)
+    seis[4,:] =- np.cross(nu,v)[1]*A*omega**2/(2*vel)*(t-xr/vel)*np.exp(-(f**2)*(t-xr/vel)**2)
+    seis[5,:] =- np.cross(nu,v)[2]*A*omega**2/(2*vel)*(t-xr/vel)*np.exp(-(f**2)*(t-xr/vel)**2)
+    
+    seis[6,:] = - A * omega**2/vel*v[2]*nu[2]*(t-xr/vel)*np.exp(-(f**2)*(t-xr/vel)**2) 
+    
+    return seis, t
