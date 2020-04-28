@@ -1594,8 +1594,8 @@ def plot_tensor_estimation(C,C_e):
     c_est = [C_e[0,0],C_e[1,1],C_e[2,2],C_e[0,1],C_e[0,2],C_e[1,2],C_e[3,3],C_e[4,4],C_e[5,5],C_e[3,4],C_e[3,5],\
              C_e[4,5],C_e[0,3],C_e[0,4],C_e[0,5],C_e[1,3],C_e[1,4],C_e[1,5],C_e[2,3],C_e[2,4],C_e[2,5]]
     
-    plt.figure(figsize=(10,7))
-    plt.scatter(param,c_est,color='blue',marker='d',label='Est 7C',s=70,edgecolors='black')
+    plt.figure(figsize=(15,10))
+    plt.scatter(param,c_est,color='blue',marker='d',label='Est',s=70,edgecolors='black')
     plt.scatter(param,c_true,color='red',marker='x',label='True',s=80,edgecolors='black')
     plt.grid()
     plt.legend(loc=1)
@@ -1613,7 +1613,7 @@ def plot_tensor_estimation2(C,C_e,C_e2):
               C_e2[3,5],C_e2[4,5],C_e2[0,3],C_e2[0,4],C_e2[0,5],C_e2[1,3],C_e2[1,4],C_e2[1,5],C_e2[2,3],C_e2[2,4],\
               C_e2[2,5]]
     
-    plt.figure(figsize=(10,7))
+    plt.figure(figsize=(15,10))
     plt.scatter(param,c_est,color='blue',marker='d',label='Est 7C',s=70,edgecolors='black')
     plt.scatter(param,c_est2,color='lime',label='Est 6C',s=70,edgecolors='black')
     plt.scatter(param,c_true,color='red',marker='x',label='True',s=80,edgecolors='black')
