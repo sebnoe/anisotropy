@@ -481,7 +481,7 @@ def plot_directions(nus):
     ax.pole(0, 0, 'black', markersize=8,marker='o')
     for i in range(0,len(nus)):
         ic,dc = get_angles([nus[i][1],nus[i][0],nus[i][2]])
-        ic,dc = ic*r2d, dc*r2d+90
+        ic,dc = ic*r2d, dc*r2d+90.
         ax.pole(dc, ic, 'r', markersize=10,marker='*')
     ax.grid()
     plt.savefig('directions_plot.png')
@@ -935,33 +935,119 @@ def get_angles(r):
 
 def get_polarizations(seis,mode):
     nt = len(seis[0,:])
-    Cov = np.zeros((3,3))
-    for i in range(0,3):
-        for j in range(0,3):
-            for it in range(0,nt):
-                Cov[i][j] += 1/nt**2 * seis[i,it] * seis[j,it] * (nt-it)**3
-    
-    w,v = np.linalg.eig(Cov)
-    for i in range(0,3):
-        if w[i]<0:
-            w[i] = -w[i]
-    l3 = np.argmax(w)
-    l1 = np.argmin(w)
-    for i in range(0,3):
-        if l1!=i and l3!=i:
-            l2 = i
     if mode=='rot':
+        Cov = np.zeros((3,3))
+        for i in range(0,3):
+            for j in range(0,3):
+                for it in range(0,nt):
+                    Cov[i][j] += 1/nt**2 * seis[i,it] * seis[j,it] * (nt-it)**3
+
+        w,v = np.linalg.eig(Cov)
+        for i in range(0,3):
+            if w[i]<0:
+                w[i] = -w[i]
+        l3 = np.argmax(w)
+        l1 = np.argmin(w)
+        for i in range(0,3):
+            if l1!=i and l3!=i:
+                l2 = i
         return [v[:,l3], v[:,l2],0]
+    if mode=='noise':          
+        ix = [np.argmax(seis[0,:]),np.argmin(seis[0,:])]
+        if ix[0]<ix[1]:
+            ix = ix[0]
+            iy = np.argmax(seis[1,:])
+            iz = np.argmax(seis[2,:])
+        else:
+            ix = ix[1]
+            iy = np.argmin(seis[1,:])
+            iz = np.argmin(seis[2,:])
+
+        n1est = np.array([seis[0,ix],seis[1,ix],seis[2,ix]])
+        n2est = np.array([seis[0,iy],seis[1,iy],seis[2,iy]])
+        n3est = np.array([seis[0,iz],seis[1,iz],seis[2,iz]]) 
+        n1est *= 1/np.sqrt(np.sum(n1est**2))
+        n2est *= 1/np.sqrt(np.sum(n2est**2)) 
+        n3est *= 1/np.sqrt(np.sum(n3est**2))
+        indicator = np.array([abs(ix-iy),abs(ix-iz),abs(iz-iy)])
+        for i in range(3):
+            if indicator[i]==0:
+                indicator[i]=len(seis[0,:])*2
+
+        if np.argmin(indicator)==0:
+            rotvec = np.cross(n1est,n2est)
+        elif np.argmin(indicator)==1:
+            rotvec = np.cross(n1est,n3est)
+
+        else:
+            rotvec = np.cross(n2est,n3est)    
+
+        seis_rot, R = rotate_seis_around_vector(seis,rotvec)
+        #plotseis(seis,range(len(seis[0,:])),rotvec)
+        #plotseis(seis_rot,range(len(seis[0,:])),rotvec)
+        N = 180
+        ang = np.linspace(0,2*np.pi,N)
+        diff = np.zeros(N)
+
+        # try to spread shear wave splitting a far as possible
+        ix = [np.argmax(seis_rot[0,:]),np.argmin(seis_rot[0,:])]
+        if ix[0]<ix[1]: 
+            first=True
+        else:  
+            first=False
+        for i in range(0,N):
+            y = np.cos(ang[i])*seis_rot[1,:] - np.sin(ang[i])*seis_rot[2,:]
+            z = np.sin(ang[i])*seis_rot[1,:] + np.cos(ang[i])*seis_rot[2,:]
+            if first:
+                iy = np.argmax(y)
+                iz = np.argmax(z)
+            else:
+                iy = np.argmin(y)
+                iz = np.argmin(z)
+            diff[i] = abs(iy-iz)
+        amax = np.argmax(diff)    
+        y = np.cos(ang[amax])*seis_rot[1,:] - np.sin(ang[amax])*seis_rot[2,:]
+        z = np.sin(ang[amax])*seis_rot[1,:] + np.cos(ang[amax])*seis_rot[2,:] 
+
+        ix = [np.argmax(seis_rot[0,:]),np.argmin(seis_rot[0,:])]
+        if ix[0]<ix[1]:
+            ix = ix[0]
+            iy = np.argmax(y)
+            iz = np.argmax(z)
+        else:
+            ix = ix[1]
+            iy = np.argmin(y)
+            iz = np.argmin(z)
+
+
+        ind = [ix,iy,iz]
+        ind.sort()
+        ix, iy, iz = ind[0], ind[1], ind[2]
+
+        n1 = np.array([seis_rot[0,ix],seis_rot[1,ix],seis_rot[2,ix]])
+        n2 = np.array([seis_rot[0,iy],seis_rot[1,iy],seis_rot[2,iy]])
+        n3 = np.array([seis_rot[0,iz],seis_rot[1,iz],seis_rot[2,iz]]) 
+
+        n1 *= 1/np.sqrt(np.sum(n1**2))
+        n2 *= 1/np.sqrt(np.sum(n2**2)) 
+        n3 *= 1/np.sqrt(np.sum(n3**2))
+
+        n1 = np.dot(R.transpose(),n1)
+        n2 = np.dot(R.transpose(),n2)
+        n3 = np.dot(R.transpose(),n3)
+
+        ## Gram-Schmidt Orthogonalization
+
+        n2 = n2 - np.dot(n1,n2)*n1
+        n2 *= 1/np.sqrt(np.sum(n2**2)) 
+
+        n3 = n3 - np.dot(n1,n3)*n1 - np.dot(n2,n3)*n2
+        n3 *= 1/np.sqrt(np.sum(n3**2))
+
+        return [n1,n2,n3]
     
-    eps = max(w)*1e-9
-    # just one signal, e.g. rotations in isotropic media
-    if abs(w[l2]) <= eps: 
-        return [v[:,l3],0,0]
-    # two signals, e.g. no shear wave splitting 
-    elif abs(w[l1]) <= eps: 
-        return [v[:,l3], v[:,l2],0]
-    # three signals, general case
-    else:           
+    
+    if mode=='trans':           
         mode = np.zeros((4,nt))
         for i in range(0,3):
             eps = max(seis[i,:]) * 0.7
@@ -1660,9 +1746,10 @@ def butter_lowpass_filter(data, cutoff, fs, order):
 
 # -
 
-def estimate_velocity_7C(seis, nu,t, plot_rotated_seismo=False):
+def estimate_velocity_7C(seis, nu,t, min_vertical):
     nt = len(seis[0,:])
-    r2d = 180/np.pi    
+    r2d = 180/np.pi 
+    d2r = 1/r2d
     theta, phi = get_angles(nu)
     R = np.zeros((3,3))
     r = [(1. + np.cos(phi)*np.sin(theta))/2,\
@@ -1700,8 +1787,15 @@ def estimate_velocity_7C(seis, nu,t, plot_rotated_seismo=False):
     ip = np.argmax(seis_new[0,:])
     uz = seis[2,ip]
     ezz = seis[6,ip]
-    qP = abs(uz*nu[2]/ezz)
-    
+    if (theta*r2d) < min_vertical:
+        qP = abs(uz*np.cos(theta) / ezz)
+    else:
+        uy = seis_new[1,ip]
+        uz = seis_new[2,ip]
+        ry = seis_new[4,ip]
+        rz = seis_new[5,ip]
+
+        qP = .5 * np.sqrt(uy**2+uz**2)/np.sqrt(ry**2+rz**2)
     
     nang = 721
     xc  = np.zeros(nang)
@@ -1817,3 +1911,137 @@ def get_seis_one_wavetype(mode,v,vel,nu,f,fs):
     seis[6,:] = - A * omega**2/vel*v[2]*nu[2]*(t-xr/vel)*np.exp(-(f**2)*(t-xr/vel)**2) 
     
     return seis, t
+
+
+def get_seis_strain_diff_propdir(v,vel,nu,f,fs):    
+    xr = max(vel)*5.
+    tmin = xr / max(vel) * 0.3
+    tmax = xr / min(vel) * 1.3
+    nt = int(((tmax-tmin) * fs)+1) 
+    t = np.linspace(tmin,tmax,nt)
+    seis = np.zeros((12,nt))   
+    A = 1
+    omega = 2*np.pi*f
+    ## here, nu is a 3x3 matrix
+    seis[0,:] = - v[0,0]*A*omega**2*(t-xr/vel[0])*np.exp(-(f**2)*(t-xr/vel[0])**2) \
+            - v[0,1]*A*omega**2*(t-xr/vel[1])*np.exp(-(f**2)*(t-xr/vel[1])**2) \
+            - v[0,2]*A*omega**2*(t-xr/vel[2])*np.exp(-(f**2)*(t-xr/vel[2])**2)
+    seis[1,:] = - v[1,0]*A*omega**2*(t-xr/vel[0])*np.exp(-(f**2)*(t-xr/vel[0])**2) \
+            - v[1,1]*A*omega**2*(t-xr/vel[1])*np.exp(-(f**2)*(t-xr/vel[1])**2) \
+            - v[1,2]*A*omega**2*(t-xr/vel[2])*np.exp(-(f**2)*(t-xr/vel[2])**2) 
+    seis[2,:] = - v[2,0]*A*omega**2*(t-xr/vel[0])*np.exp(-(f**2)*(t-xr/vel[0])**2) \
+            - v[2,1]*A*omega**2*(t-xr/vel[1])*np.exp(-(f**2)*(t-xr/vel[1])**2) \
+            - v[2,2]*A*omega**2*(t-xr/vel[2])*np.exp(-(f**2)*(t-xr/vel[2])**2) 
+    
+    seis[3,:] =- np.cross(nu[0],v[:,0])[0]*A*omega**2/(2*vel[0])*(t-xr/vel[0])*np.exp(-(f**2)*(t-xr/vel[0])**2)\
+            - np.cross(nu[1],v[:,1])[0]*A*omega**2/(2*vel[1])*(t-xr/vel[1])*np.exp(-(f**2)*(t-xr/vel[1])**2) \
+            - np.cross(nu[2],v[:,2])[0]*A*omega**2/(2*vel[2])*(t-xr/vel[2])*np.exp(-(f**2)*(t-xr/vel[2])**2)
+    seis[4,:] = - np.cross(nu[0],v[:,0])[1]*A*omega**2/(2*vel[0])*(t-xr/vel[0])*np.exp(-(f**2)*(t-xr/vel[0])**2) \
+            - np.cross(nu[1],v[:,1])[1]*A*omega**2/(2*vel[1])*(t-xr/vel[1])*np.exp(-(f**2)*(t-xr/vel[1])**2) \
+            - np.cross(nu[2],v[:,2])[1]*A*omega**2/(2*vel[2])*(t-xr/vel[2])*np.exp(-(f**2)*(t-xr/vel[2])**2)
+    seis[5,:] = - np.cross(nu[0],v[:,0])[2]*A*omega**2/(2*vel[0])*(t-xr/vel[0])*np.exp(-(f**2)*(t-xr/vel[0])**2) \
+            - np.cross(nu[1],v[:,1])[2]*A*omega**2/(2*vel[1])*(t-xr/vel[1])*np.exp(-(f**2)*(t-xr/vel[1])**2) \
+            - np.cross(nu[2],v[:,2])[2]*A*omega**2/(2*vel[2])*(t-xr/vel[2])*np.exp(-(f**2)*(t-xr/vel[2])**2)
+    
+    # xx
+    seis[6,:] = - A * omega**2/vel[0]*v[0,0]*nu[0,0]*(t-xr/vel[0])*np.exp(-(f**2)*(t-xr/vel[0])**2) \
+                - A * omega**2/vel[1]*v[0,1]*nu[1,0]*(t-xr/vel[1])*np.exp(-(f**2)*(t-xr/vel[1])**2)\
+                - A * omega**2/vel[2]*v[0,2]*nu[2,0]*(t-xr/vel[2])*np.exp(-(f**2)*(t-xr/vel[2])**2)
+    # yy
+    seis[7,:] = - A * omega**2/vel[0]*v[1,0]*nu[0,1]*(t-xr/vel[0])*np.exp(-(f**2)*(t-xr/vel[0])**2) \
+                - A * omega**2/vel[1]*v[1,1]*nu[1,1]*(t-xr/vel[1])*np.exp(-(f**2)*(t-xr/vel[1])**2)\
+                - A * omega**2/vel[2]*v[1,2]*nu[2,1]*(t-xr/vel[2])*np.exp(-(f**2)*(t-xr/vel[2])**2)
+    # zz 
+    seis[8,:] = - A * omega**2/vel[0]*v[2,0]*nu[0,2]*(t-xr/vel[0])*np.exp(-(f**2)*(t-xr/vel[0])**2) \
+                - A * omega**2/vel[1]*v[2,1]*nu[1,2]*(t-xr/vel[1])*np.exp(-(f**2)*(t-xr/vel[1])**2)\
+                - A * omega**2/vel[2]*v[2,2]*nu[2,2]*(t-xr/vel[2])*np.exp(-(f**2)*(t-xr/vel[2])**2)
+    # xy
+    seis[9,:] = - A * omega**2/(2*vel[0])*(v[0,0]*nu[0,1]+v[1,0]*nu[0,0])*(t-xr/vel[0])*np.exp(-(f**2)*(t-xr/vel[0])**2) \
+               - A * omega**2/(2*vel[1])*(v[0,1]*nu[1,1]+v[1,1]*nu[1,0])*(t-xr/vel[1])*np.exp(-(f**2)*(t-xr/vel[1])**2)\
+               - A * omega**2/(2*vel[2])*(v[0,2]*nu[2,1]+v[1,2]*nu[2,0])*(t-xr/vel[2])*np.exp(-(f**2)*(t-xr/vel[2])**2)
+     #xz 
+    seis[10,:] = - A * omega**2/(2*vel[0])*(v[0,0]*nu[0,2]+v[2,0]*nu[0,0])*(t-xr/vel[0])*np.exp(-(f**2)*(t-xr/vel[0])**2) \
+                - A * omega**2/(2*vel[1])*(v[0,1]*nu[1,2]+v[2,1]*nu[1,0])*(t-xr/vel[1])*np.exp(-(f**2)*(t-xr/vel[1])**2)\
+                - A * omega**2/(2*vel[2])*(v[0,2]*nu[2,2]+v[2,2]*nu[2,0])*(t-xr/vel[2])*np.exp(-(f**2)*(t-xr/vel[2])**2)
+     #yz 
+    seis[11,:] = - A * omega**2/(2*vel[0])*(v[2,0]*nu[0,1]+v[1,0]*nu[0,2])*(t-xr/vel[0])*np.exp(-(f**2)*(t-xr/vel[0])**2) \
+                - A * omega**2/(2*vel[1])*(v[2,1]*nu[1,1]+v[1,1]*nu[1,2])*(t-xr/vel[1])*np.exp(-(f**2)*(t-xr/vel[1])**2)\
+                - A * omega**2/(2*vel[2])*(v[2,2]*nu[2,1]+v[1,2]*nu[2,2])*(t-xr/vel[2])*np.exp(-(f**2)*(t-xr/vel[2])**2)
+    
+    return seis, t
+
+
+def triangularplot(C,C_e,nbins,width,Ninv,save,savename = ' '):
+    fac = 1e-9 ##conversion to GPa
+    width *= 1e9*fac
+    Nplot = 1000
+
+    param = [['C11','C12','C13','C14','C15','C16'],\
+             ['C00','C22','C23','C24','C25','C26'],\
+             ['C00','C00','C33','C34','C35','C36'],\
+             ['C00','C00','C00','C44','C45','C46'],\
+             ['C00','C00','C00','C00','C55','C56'],\
+             ['C00','C00','C00','C00','C00','C66']]
+
+    fig, ax = plt.subplots(ncols=6,nrows=6, figsize=(13,13),sharey=True)
+
+    # get rid of potential 'nan' in estimations
+    i1, i2, i3 = np.shape(C_e)
+    C_e_stripped = []
+    for i in range(i1):
+        c = 0
+        for j in range(i2):
+            for k in range(i3):
+                if not np.isnan(C_e[i,j,k]) and not C_e[i,j,k]==0.0: c+=1
+        if c==36:
+            C_e_stripped.append(C_e[i,:,:])
+    print(str(Ninv - np.shape(C_e_stripped)[0])+' estimates stripped')
+    C_e_stripped = np.array(C_e_stripped)
+    mu = np.zeros((6,6))
+    sig = np.zeros((6,6))
+    for i in range(0,6):
+        for j in range(i,6):
+            n = len(C_e_stripped[:,i,j])
+            mu[i,j] = 1/n * np.sum(C_e_stripped[:,i,j]*fac) 
+            sig[i,j] = 1/n * np.sum((C_e_stripped[:,i,j]*fac-mu[i,j])**2)
+
+    for i in range(0,6):
+        for j in range(0,6):
+            if i<=j:
+                hist_range = [C[i,j]*fac-width,C[i,j]*fac+width]
+                x = np.linspace(hist_range[0],hist_range[1],Nplot)
+                y = 1/np.sqrt(2*np.pi*sig[i,j])*np.e**(-1/(2*sig[i,j])*(x-mu[i,j])**2)
+                ax[i,j].hist(C_e_stripped[:,i,j]*fac,bins=nbins,color='darkorange',density=True, range=hist_range)
+                ax[i,j].set_yticks([])
+                ax[i,j].axvline(C[i,j]*fac,linestyle='dotted',c='black')
+                ax[i,j].axvline(mu[i,j],linestyle='dashed',c='black')
+                ax[i,j].plot(x,y,color='black',linestyle='dashed',linewidth=1.2)
+                ax[i,j].text(0.03,0.8,param[i][j],transform = ax[i,j].transAxes,fontsize=15)
+            else:
+                ax[i,j].set_axis_off()
+                if i==5 and j==0:
+                    ax[i,j].text(0.5,0.5,'sym.',transform = ax[i,j].transAxes,fontsize=25)
+    if save:
+        plt.savefig(savename+'_tri.png')
+    plt.plot()
+    
+    param = ['C11','C22','C33','C12','C13','C23','C44','C55','C66','C45','C46','C56','C14','C15','C16','C24',\
+         'C25','C26','C34','C35','C36']
+    c_true = np.array([C[0,0],C[1,1],C[2,2],C[0,1],C[0,2],C[1,2],C[3,3],C[4,4],C[5,5],C[3,4],C[3,5],C[4,5],C[0,3],C[0,4],\
+              C[0,5],C[1,3],C[1,4],C[1,5],C[2,3],C[2,4],C[2,5]])*1e-9
+    c_est = np.array([mu[0,0],mu[1,1],mu[2,2],mu[0,1],mu[0,2],mu[1,2],mu[3,3],mu[4,4],mu[5,5],mu[3,4],\
+             mu[3,5],mu[4,5],mu[0,3],mu[0,4],mu[0,5],mu[1,3],mu[1,4],mu[1,5],mu[2,3],mu[2,4],\
+             mu[2,5]])
+    c_err = np.sqrt(np.array([sig[0,0],sig[1,1],sig[2,2],sig[0,1],sig[0,2],sig[1,2],sig[3,3],sig[4,4],sig[5,5],sig[3,4],\
+             sig[3,5],sig[4,5],sig[0,3],sig[0,4],sig[0,5],sig[1,3],sig[1,4],sig[1,5],sig[2,3],sig[2,4],\
+             sig[2,5]]))
+
+    plt.figure(figsize=(13,8))
+    plt.errorbar(param,c_est,yerr=c_err,label='Estimation',color='blue',fmt='o',ms=8,capsize=5,mfc='blue',mec='black')
+    plt.scatter(param,c_true,color='red',marker='X',label='True',s=110,edgecolors='black')
+    plt.grid(axis='y')
+    plt.ylabel('Elastic parameter [GPa]')
+    plt.legend(loc=1)
+    if save:
+        plt.savefig(savename+'_err.png')
+    plt.show()
