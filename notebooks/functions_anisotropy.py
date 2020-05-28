@@ -207,6 +207,7 @@ def load_medium_list():
             'mesaverde mudshale','mesaverde calcareous sandstone','quartz']
     for i in range(0,len(medium)):
         print('#'+str(i), medium[i])
+    print(' ')    
     return medium    
 
 def get_specific_VTI(name,give_thomsen=False, density=3000.00001,eps=1e-5,gamma=1e-5,delta=1e-5,vp0=3500.00001,vs0=3500.00001/np.sqrt(3)):
@@ -1087,7 +1088,143 @@ def get_polarizations(seis,mode):
             l = np.argmax(w)
             eigv[k] = v[:,l]
         eigv[2] = np.cross(eigv[1],eigv[0])
-        return [eigv[0],eigv[2],eigv[1]]    
+        return [eigv[0],eigv[2],eigv[1]] 
+    
+    if mode=='nav': #Noise AVerage
+        hw = 10
+        ix = min([np.argmax(seis[0,:]),np.argmin(seis[0,:])])
+        Cov = np.zeros((3,3))       
+        for i in range(0,3):
+            for j in range(0,3):
+                for it in range(ix-hw,ix+hw):
+                    Cov[i,j] += seis[i,it] * seis[j,it]
+        w,Q = np.linalg.eigh(Cov, UPLO='U')
+        loc = np.argsort(np.abs(w))[-1]
+        n1est = Q[:,loc]            
+        n1est *= 1/np.sqrt(np.sum(n1est**2))
+        
+        iy = min([np.argmax(seis[1,:]),np.argmin(seis[1,:])])
+        Cov = np.zeros((3,3))
+        for i in range(0,3):
+            for j in range(0,3):
+                for it in range(iy-hw,iy+hw):
+                    Cov[i,j] += seis[i,it] * seis[j,it]
+        w,Q = np.linalg.eigh(Cov, UPLO='U')
+        loc = np.argsort(np.abs(w))[-1]
+        n2est = Q[:,loc]            
+        n2est *= 1/np.sqrt(np.sum(n1est**2))
+        
+        iz = min([np.argmax(seis[2,:]),np.argmin(seis[2,:])])
+        Cov = np.zeros((3,3))
+        for i in range(0,3):
+            for j in range(0,3):
+                for it in range(iz-hw,iz+hw):
+                    Cov[i,j] += seis[i,it] * seis[j,it]
+        w,Q = np.linalg.eigh(Cov, UPLO='U')
+        loc = np.argsort(np.abs(w))[-1]
+        n3est = Q[:,loc]            
+        n3est *= 1/np.sqrt(np.sum(n1est**2))
+        
+        indicator = np.array([abs(ix-iy),abs(ix-iz),abs(iz-iy)])
+        for i in range(3):
+            if indicator[i]==0:
+                indicator[i]=len(seis[0,:])*2
+
+        if np.argmin(indicator)==0:
+            rotvec = np.cross(n1est,n2est)
+        elif np.argmin(indicator)==1:
+            rotvec = np.cross(n1est,n3est)
+
+        else:
+            rotvec = np.cross(n2est,n3est)    
+        try:
+            seis_rot, R = rotate_seis_around_vector(seis,rotvec)
+        except:
+            seis_rot, R = rotate_seis_around_vector(seis,n1est)
+        N = 180
+        ang = np.linspace(0,2*np.pi,N)
+        diff = np.zeros(N)
+
+        # try to spread shear wave splitting as far as possible
+        ix = [np.argmax(seis_rot[0,:]),np.argmin(seis_rot[0,:])]
+        if ix[0]<ix[1]: 
+            first=True
+        else:  
+            first=False
+        for i in range(0,N):
+            y = np.cos(ang[i])*seis_rot[1,:] - np.sin(ang[i])*seis_rot[2,:]
+            z = np.sin(ang[i])*seis_rot[1,:] + np.cos(ang[i])*seis_rot[2,:]
+            if first:
+                iy = np.argmax(y)
+                iz = np.argmax(z)
+            else:
+                iy = np.argmin(y)
+                iz = np.argmin(z)
+            diff[i] = abs(iy-iz)
+        amax = np.argmax(diff)    
+        y = np.cos(ang[amax])*seis_rot[1,:] - np.sin(ang[amax])*seis_rot[2,:]
+        z = np.sin(ang[amax])*seis_rot[1,:] + np.cos(ang[amax])*seis_rot[2,:] 
+
+        ix = [np.argmax(seis_rot[0,:]),np.argmin(seis_rot[0,:])]
+        if ix[0]<ix[1]:
+            ix = ix[0]
+            iy = np.argmax(y)
+            iz = np.argmax(z)
+        else:
+            ix = ix[1]
+            iy = np.argmin(y)
+            iz = np.argmin(z)
+
+
+        ind = [ix,iy,iz]
+        ind.sort()
+        ix, iy, iz = ind[0], ind[1], ind[2]
+
+
+        Cov = np.zeros((3,3))
+        for i in range(0,3):
+            for j in range(0,3):
+                for it in range(ix-hw,ix+hw):
+                    Cov[i,j] += seis_rot[i,it] * seis_rot[j,it]
+        w,Q = np.linalg.eigh(Cov, UPLO='U')
+        loc = np.argsort(np.abs(w))[-1]
+        n1 = Q[:,loc]  
+        
+        Cov = np.zeros((3,3))
+        for i in range(0,3):
+            for j in range(0,3):
+                for it in range(iy-2*hw,iy):
+                    Cov[i,j] += seis_rot[i,it] * seis_rot[j,it]
+        w,Q = np.linalg.eigh(Cov, UPLO='U')
+        loc = np.argsort(np.abs(w))[-1]
+        n2 = Q[:,loc]
+        
+        Cov = np.zeros((3,3))
+        for i in range(0,3):
+            for j in range(0,3):
+                for it in range(iz,iz+2*hw):
+                    Cov[i,j] += seis_rot[i,it] * seis_rot[j,it]
+        w,Q = np.linalg.eigh(Cov, UPLO='U')
+        loc = np.argsort(np.abs(w))[-1]
+        n3 = Q[:,loc]
+
+        n1 *= 1/np.sqrt(np.sum(n1**2))
+        n2 *= 1/np.sqrt(np.sum(n2**2)) 
+        n3 *= 1/np.sqrt(np.sum(n3**2))
+
+        n1 = np.dot(R.transpose(),n1)
+        n2 = np.dot(R.transpose(),n2)
+        n3 = np.dot(R.transpose(),n3)
+
+        ## Gram-Schmidt Orthogonalization
+
+        n2 = n2 - np.dot(n1,n2)*n1
+        n2 *= 1/np.sqrt(np.sum(n2**2)) 
+
+        n3 = n3 - np.dot(n1,n3)*n1 - np.dot(n2,n3)*n2
+        n3 *= 1/np.sqrt(np.sum(n3**2))
+
+        return [n1,n2,n3] 
 
 
 # #### Determine propagation direction with 6C-measurements
@@ -2045,3 +2182,181 @@ def triangularplot(C,C_e,nbins,width,Ninv,save,savename = ' '):
     if save:
         plt.savefig(savename+'_err.png')
     plt.show()
+
+
+# +
+def getrotationVTI(C):
+    c = np.zeros((3,3,3,3))
+    for i in range(0,3):
+        for j in range(0,3):
+            for k in range(0,3):
+                for l in range(0,3):
+                    if i==j:
+                        alpha = i
+                    elif (i==1 and j==2) or (i==2 and j==1):
+                        alpha = 3
+                    elif (i==0 and j==2) or (i==2 and j==0):
+                        alpha = 4
+                    elif (i==1 and j==0) or (i==0 and j==1):
+                        alpha = 5
+                    if k==l:
+                        beta = k
+                    elif (k==1 and l==2) or (k==2 and l==1):
+                        beta = 3
+                    elif (k==0 and l==2) or (k==2 and l==0):
+                        beta = 4
+                    elif (k==1 and l==0) or (k==0 and l==1):
+                        beta = 5
+                    c[i,j,k,l] = C[alpha,beta]
+                    
+    
+    v = np.zeros((3,3))
+    for i in range(0,3):
+        for j in range(0,3):
+            for k in range(0,3):
+                v[i,j] += c[k,i,k,j]
+    vprime = v - 1./3 * np.trace(v)*np.identity(3)      
+
+    w2,v2 = np.linalg.eigh(vprime)
+
+    l = np.trace(vprime**3)/np.trace(vprime**2)*2
+
+    ind2 = np.argmin([abs(w2[0]-l),abs(w2[1]-l),abs(w2[2]-l)])
+    if ind2 == 0:
+        ind21,ind22 = 1,2
+    elif ind2 == 1:
+        ind21,ind22 = 2,0
+    else:
+        ind21,ind22 = 0,1
+        
+    u2 = np.array([v2[:,ind22],v2[:,ind21],v2[:,ind2]])
+
+    e = np.identity(3) 
+    g2 = np.zeros((3,3))
+    g21 = np.zeros((3,3))
+    g22 = np.zeros((3,3))
+    g23 = np.zeros((3,3))
+    g24 = np.zeros((3,3))
+    g25 = np.zeros((3,3))
+   
+    for i in range(0,3):
+        for j in range(0,3):
+            g2[i,j] = np.dot(u2[i,:],e[j,:])
+    c2 = rotate_tensor_arbitrary_rot(c,g2)
+
+    u2 = np.array([v2[:,ind21],v2[:,ind2],v2[:,ind22]])
+    for i in range(0,3):
+        for j in range(0,3):
+            g21[i,j] = np.dot(u2[i,:],e[j,:])
+    c21 = rotate_tensor_arbitrary_rot(c,g21)
+    u2 = np.array([v2[:,ind2],v2[:,ind21],v2[:,ind22]])
+    for i in range(0,3):
+        for j in range(0,3):
+            g22[i,j] = np.dot(u2[i,:],e[j,:])
+    c22 = rotate_tensor_arbitrary_rot(c,g22)
+    u2 = np.array([v2[:,ind21],v2[:,ind22],v2[:,ind2]])
+    for i in range(0,3):
+        for j in range(0,3):
+            g23[i,j] = np.dot(u2[i,:],e[j,:])
+    c23 = rotate_tensor_arbitrary_rot(c,g23)  
+    
+    u2 = np.array([v2[:,ind22],v2[:,ind2],v2[:,ind21]])
+    for i in range(0,3):
+        for j in range(0,3):
+            g24[i,j] = np.dot(u2[i,:],e[j,:])        
+    c24 = rotate_tensor_arbitrary_rot(c,g24)
+    
+    u2 = np.array([v2[:,ind2],v2[:,ind22],v2[:,ind21]])
+    for i in range(0,3):
+        for j in range(0,3):
+            g25[i,j] = np.dot(u2[i,:],e[j,:])        
+    c25 = rotate_tensor_arbitrary_rot(c,g25)
+    
+    i = np.argmin([abs(c2[1,2,1,2]-c2[0,2,0,2]),abs(c21[1,2,1,2]-c21[0,2,0,2]),abs(c22[1,2,1,2]-c22[0,2,0,2]),
+                   abs(c23[1,2,1,2]-c23[0,2,0,2]),abs(c24[1,2,1,2]-c24[0,2,0,2]),abs(c25[1,2,1,2]-c25[0,2,0,2])])
+    if i==1:
+        c2 = c21
+        g2 = g21
+    elif i==2:
+        c2 = c22
+        g2 = g22
+    elif i==3:
+        c2 = c23
+        g2 = g23
+    elif i==4:
+        c2 = c24
+        g2 = g24
+    elif i==5:
+        c2 = c25
+        g2 = g25    
+        
+    C2 = np.zeros((6,6))
+    for i in range(0,3):
+        for j in range(0,3):
+            for k in range(0,3):
+                for l in range(0,3):
+                    if i==j:
+                        alpha = i
+                    elif (i==1 and j==2) or (i==2 and j==1):
+                        alpha = 3
+                    elif (i==0 and j==2) or (i==2 and j==0):
+                        alpha = 4
+                    elif (i==1 and j==0) or (i==0 and j==1):
+                        alpha = 5
+                    if k==l:
+                        beta = k
+                    elif (k==1 and l==2) or (k==2 and l==1):
+                        beta = 3
+                    elif (k==0 and l==2) or (k==2 and l==0):
+                        beta = 4
+                    elif (k==1 and l==0) or (k==0 and l==1):
+                        beta = 5
+                    C2[alpha,beta] = c2[i,j,k,l]
+    return C2, g2
+
+def tensor_product(a,b):
+    c1,c2 = np.shape(a)
+    c3,c4 = np.shape(b)
+    z = np.zeros((c1,c2,c3,c4))
+    for i in range(0,c1):
+        for j in range(0,c2):
+            for k in range(0,c3):
+                for l in range(0,c4):
+                    z[i,j,k,l] = a[i,j]*b[k,l]
+    return z
+
+def tensor_product_bar(a,b):
+    c1,c2 = np.shape(a)
+    c3,c4 = np.shape(b)
+    z = np.zeros((c1,c2,c3,c4))
+    for i in range(0,c1):
+        for j in range(0,c2):
+            for k in range(0,c3):
+                for l in range(0,c4):
+                    z[i,j,k,l] = 1./2 * (a[i,k]*b[j,l]+a[i,l]*b[j,k]) 
+    return z
+
+def tensor_norm(a):
+    c1,c2,c3,c4 = np.shape(a)
+    z = 0
+    for i in range(0,c1):
+        for j in range(0,c2):
+            for k in range(0,c3):
+                for l in range(0,c4):
+                    z += a[i,j,k,l]*a[i,j,k,l]
+    return z     
+
+def rotate_tensor_arbitrary_rot(c,r):
+    cnew = np.zeros((3,3,3,3))
+    for i in range(3):
+        for j in range(3):
+            for k in range(3):
+                for l in range(3):
+                    sum = 0.
+                    for ii in range(3):
+                        for jj in range(3):
+                            for kk in range(3):
+                                for ll in range(3):
+                                    sum=sum+r[i,ii]*r[j,jj]*r[k,kk]*r[l,ll]*c[ii,jj,kk,ll]
+                    cnew[i,j,k,l]=sum
+    return cnew
