@@ -1025,7 +1025,7 @@ def get_propagation_direction(seis,f,fs,switchoption=False,control_fac=1.,turnof
     else:
         trace = seis
     
-    n_rot, splitting = get_polarizations_rot(trace[3:],control_fac)
+    n_rot, splitting = get_polarizations_rot(trace[3:,:],control_fac)
     switch = False
     if switchoption and not splitting:
         switch = True 
@@ -2282,39 +2282,39 @@ def estimate_velocities_noise(seis,nu_e,f,fs):
             
         seis,_ = rotate_seis_around_vector(seis,nu_e)
         
+        iqp,iqs1,iqs2 = pick_arrivals(seis,f,fs)
         nang = 360
         xc  = np.zeros(nang)
-        ang = np.linspace(0,180,nang)
+        ang = np.linspace(-45,45,nang)
         d2r = np.pi/180
 
         for ii in range(nang):
             angle = ang[ii]
-            xr = np.cos(angle*d2r)*seis[1,:] -  np.sin(angle*d2r)*seis[2,:]
-            yr = np.sin(angle*d2r)*seis[1,:] +  np.cos(angle*d2r)*seis[2,:]
+            xr = np.cos(angle*d2r)*seis[4,:] -  np.sin(angle*d2r)*seis[5,:]
+            yr = np.sin(angle*d2r)*seis[4,:] +  np.cos(angle*d2r)*seis[5,:]
             junk = np.corrcoef(xr, yr)
             xc[ii] = junk[1,0]
             ang[ii] = angle
         
         imax = np.argmax(xc)
-        imax2 = np.argmin(xc)
-        if abs(imax)<abs(imax2):
-            imax = imax2
-        amax = ang[imax] + 45.
 
-        angle = amax
+        angle = ang[imax]+90.
         seis[1,:],seis[2,:] = np.cos(angle*d2r)*seis[1,:] -  np.sin(angle*d2r)*seis[2,:],\
                               np.sin(angle*d2r)*seis[1,:] +  np.cos(angle*d2r)*seis[2,:]
         
-        iqp,iqs1,iqs2 = pick_arrivals(seis,f,fs)
-        
-        safety = 10
-        
-        if abs(iqs1-iqs2)<safety:
+        seis[4,:],seis[5,:] = np.cos(angle*d2r)*seis[4,:] -  np.sin(angle*d2r)*seis[5,:],\
+                                  np.sin(angle*d2r)*seis[4,:] +  np.cos(angle*d2r)*seis[5,:]
+          
+        rotamp = np.max(np.sqrt(seis[4,:]**2+seis[5,:]**2))
+        h = 0.2
+        hw = 3
+        if (np.max(np.abs(seis[4,iqs1-hw:iqs1+hw]))>h*rotamp and np.max(np.abs(seis[5,iqs1-hw:iqs1+hw]))>h*rotamp)\
+            or (np.max(np.abs(seis[4,iqs2-hw:iqs2+hw]))>h*rotamp and np.max(np.abs(seis[5,iqs2-hw:iqs2+hw]))>h*rotamp):
             angle = 45.
             seis[1,:],seis[2,:] = np.cos(angle*d2r)*seis[1,:] -  np.sin(angle*d2r)*seis[2,:],\
                                   np.sin(angle*d2r)*seis[1,:] +  np.cos(angle*d2r)*seis[2,:]
-
-            iqp,iqs1,iqs2 = pick_arrivals(seis,f,fs)
+            seis[4,:],seis[5,:] = np.cos(angle*d2r)*seis[4,:] -  np.sin(angle*d2r)*seis[5,:],\
+                                  np.sin(angle*d2r)*seis[4,:] +  np.cos(angle*d2r)*seis[5,:]
                           
         vel_e = 1/2. * np.sqrt(seis[1,:]**2+seis[2,:]**2)/np.sqrt(seis[4,:]**2+seis[5,:]**2)
         weight = np.sqrt(seis[1,:]**2+seis[2,:]**2) * np.sqrt(seis[4,:]**2+seis[5,:]**2)
